@@ -9,4 +9,6 @@ in the docs directory (start with quick-start.txt)
 
 Please use Groups.IO PTCTalk for discussion of the software and related topics.
 
+The software was built with Cygwin (see cygwin.com for more info).
+
 ![Screenshot](itcmon-screenshot.png)
