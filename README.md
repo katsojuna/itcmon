@@ -1,7 +1,7 @@
-# Interoperable Train Control Monitoring software v0.1
+# Interoperable Train Control Monitoring software v0.2
 
-This first release runs on Windows (tested on Win 11) and
-needs an RTL-SDR (NESDR recommended), a 220mhz antenna, and the
+This release runs on Windows (tested on Win 11) and
+needs an RTL-SDR, a 220mhz antenna, and the
 regular Windows Zadig RTL/USB drivers installed.
 
 Download the ZIP file, unzip it into a new directory, read the files
