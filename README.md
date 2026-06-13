@@ -1,9 +1,9 @@
 # Interoperable Train Control Monitoring software v0.3
 
 Updates since v0.2:
-  added SDR ppm error correction value to mcr.json
-  improved deinterleave and fec code in s2p for better reception
-  added i2a program that translates PTC messages to ATCSMON server messages
+  - added SDR ppm error correction value to mcr.json
+  - improved deinterleave and fec code in s2p for better reception
+  - added i2a program that translates PTC messages to ATCSMON server messages
   
 ----------------------------------------------------------------------------
 This release runs on Windows (tested on Win 11) and
