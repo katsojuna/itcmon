@@ -1,0 +1,16 @@
+Possible issues:
+
+Programs just end without displaying ANYTHING at all as soon as started:
+
+  This could be a cygwin1.dll issue.  If you have other cygwin compiled
+  programs running from a different version of cygwin their can be a
+  conflict and you might need to close them.  Also, if you have the
+  cygwin environment installed on your computer then you can probably
+  just delete this dll from the distribution directory so the programs
+  will find your installed version.
+
+Not receiving anything at all with mcr:
+
+  Your RTL-SDR might have a large frequency offset error.  Figure out the ppm
+  correction value and enter it in the mcr.json file.
+  

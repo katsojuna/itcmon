@@ -1,0 +1,35 @@
+The IGW program (ITCMON Gateway)
+
+It can be used to route and aggregate ITC data between multiple
+servers and systems.  Currently it only does this for WIU status
+messages and ignores all other packet types.  All WIU data that is
+received is checked for duplicates and those are filtered out.
+
+IGW reads the igw.json config file on startup.
+There is one optional flag "-D" to display debug info.
+
+IGW has 2 input stream types and 2 output stream types.
+Each type is optional.
+
+The "servers" section defines the binary packet data to receive from
+the "s2p" programs (MCR starts one of these up for each receive
+channel).  It is the same info that ITCMON uses to connect to, to
+display data.  If you had MCR running on 3 different systems you could
+use this to grab reception data from all 3 and aggregate them.
+
+IGW then publishes the aggregated data to the port listed in the
+"zjpub" section.  Other apps can connect to this port to read the
+data, such as dispatcher displays or the ITC to ATCSMON gateway (I2A).
+
+The remain 2 types are "zjin" and "zjout". ZJ standing for ZeroMQ Json.
+
+zjout is used to "publish" aggregated data to an "upstream" aggregator.
+it makes an outgoing connection to the listed server (another copy of IGW
+running on a different machine), and authenticates itself by sending the "key".
+Then it sends the same aggregated data to that server as the "zjpub" does.
+
+zjin is used to receive the connections from a zjout server.  It defines
+a single port to listen on for connections from zjout servers.  The "credentials"
+section lists valid "keys" that are allow to upload.  You can make up a new key
+for each zjout server you want to allow.  Data received by zjin is processed in
+the same way as if packets were received from "s2p" servers.

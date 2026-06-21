@@ -1,0 +1,72 @@
+When you first start out you may not know what WIU is where, and if
+you use the auto-export wui function it will just name switches and
+signals in the order they appear from the WIU.  A common WIU will have
+1 switch and 3 signals.  You will need to figure out which signal
+controls which directions on which tracks.
+
+We want to name things in railroad terms, so they make more sense but can
+also let you then send the signals to ATCSMON or other software that can display
+these on a dispatcher layout.
+
+The railroads use "W" for a switch (to be confused with West), N to mean the switch
+is in Normal (straight through) position and R for Reverse position (diverging route).
+Signals are usually E/W and N/S for directions.
+
+Using this diagram, you see 1 switch with 3 signals. 
+
+                     <- WN
+----------W-------------------
+  E->      \
+	    \        <- WR
+	     \________________
+West<-                  ->East
+
+So if switch W is in Normal position it is called NW, or Reverse is RW.
+To give the 3 signals meaningful names we will use the direction the train
+is headed when it sees the signal, plus an indication of which track it is on.
+So the "E" above is the Eastbound signal, the "WN" is the Westbound signal for
+a train on the "Normal" track, and "WR" is the Westbound signal for a train
+on the Reverse track.  We need to figure out which of the 3 signals
+from PTC is for which direction/track.
+
+One more item we also need is a way to distinguish between multiple switches/signals.
+To do that we *might* add a prefix, usually a digit, but the prefix is often ""
+when there is only 1 switch.
+
+So once you figure out the mapping (which of the 3 signals is say "WN"
+or "E"), then label these indications in the wius.json file.  Where
+you had default labels of switch "1" and signals "1","2" and "3",
+change them like this example:
+
+    "780205123403": {
+      "name": "Oak E",
+      "sig": "UP",
+      "ind": [
+        {"switch": ""},
+        {"signal": "WN"},
+        {"signal": "WR"},
+        {"signal": "E"}
+]}
+
+The switch by default doesn't need a W so using "" means no prefix.  If you had
+a prefix of "1" then you'd write:
+        {"switch": "1"},
+        {"signal": "1WN"},
+        {"signal": "1WR"},
+        {"signal": "1E"}
+
+Now the reason for doing it all this way will become apparent when you want to send
+these signals to ATCSMON.  In the example above, the list will be translated to
+railroad indiKation bits like this:
+        {"switch": "1"},   =>  1NWK or 1RWK (depending on switch status)
+        {"signal": "1WN"}, =>  1WGK
+        {"signal": "1WR"}, =>  1WGK
+        {"signal": "1E"}   =>  1EGK
+Both Westbound tracks are only controlled by a single "WGK" bit and the signal
+indications are based on switch position.  And I should add here, a "..GK" bit
+being set means a signal is Clear, otherwise it means Stop.
+
+===================
+
+OK, now before you start doing any of this and
+making up names, read the doc file on atcsmon-display.txt

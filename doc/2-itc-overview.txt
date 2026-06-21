@@ -1,0 +1,50 @@
+This is an overview of how the ITC system works, as far as I'm able to tell.
+
+ITC packets consist of an encoded and CRC checked header, followed by
+data, and optional HMAC and CRC fields.  The data (and HMAC/CRC) is
+sent in interleaved blocks with a 12,16 FEC code.  The header has
+packet length, a type field and a modulation field (unused I think).
+
+Addressing over ITC at the radio link level is done by a 24-bit radio
+ID.  Messages are either broadcasts with no IDs (like Wayside status
+messages), or else sent with just a transmitter ID, or both
+transmitter and receiver ID.
+
+For future decoding we will want to create mapping files between
+radio-IDs and WIU IDs and Locomotive Unit numbers.
+
+There are a number of link-layer packets that manage the radio
+protocol, these are mostly packet types 1-7.
+
+0x02: Base Beacon - broadcast by a base with its GPS coordinates and
+local channel numbers to use for the base coverage area
+
+0x05: CNTL - sent by base at beginning of each superframe to
+dynamically allocate DTMA slots needed for extra transmissions
+
+0x01: QSTAT - sent by remotes to base to request slots for extra transmissions
+
+0x03: ACK - not sure why or when these are sent
+
+0x04: ACQ - sent by loco's and other mobile units entering a new base territory
+
+0x06: TIME - time and date broadcast (UTC)
+
+0x07: unknown
+
+Then there are the actual PTC packets (types 0x33/34) for Wayside
+status.  33 is a regular/periodic broadcast (which may not occur if
+the signal is currently "off").  34 is the same but it is in response
+to a status request (usually from a locomotive, not sure what packet
+they send to request this).
+
+ITCMON will highlight WIU status in Blue for a 34, and in Red for an
+actual change in the indicators (signals and switches).
+
+Other ITC messages are in the All Others tab and most often type 0x70.
+The most interesting of these are EMP (Edge Messaging Protocol)
+messages (though they seem to be reformatted from the actual
+documents, probably to save bandwidth on the Radio link.  Some of
+these messages appear to be ATCS over ITC and in these you can
+sometimes find a Codeline Data field.  The trick will be how to try to
+match these up with ATCS data fields we already have.

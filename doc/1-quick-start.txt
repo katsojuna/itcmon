@@ -1,0 +1,44 @@
+To get started quickly:
+
+Download and unzip all the files into a new directory.  Open a command
+prompt and connect to that directory.  From here you can run the
+programs.
+
+You will run the MCR program to receive signals from the SDR.  MCR
+will start up subprocesses to decode each signal into actual data.
+Then start ITCMON to view the data being received.
+
+The MCR.JSON file contains startup defaults for the MCR program only.
+This includes the RTL device#, the RF gain, and what channels to
+receive.
+
+For a quick start or when entering a new area:
+
+Start the MCR receiver program(s) by running "MCR -a" to receive ALL
+possible channels.  After you figure out what channels are actually
+active in your area then you can edit the MCR.JSON file.  This program
+will use the most resources on your system so you will want to disable
+inactive channels once you know which are in use.  You can also give
+MCR some options, in particular "-d #" to pick the RTL device, and "-g
+#" to set the gain.  For example, "mcr -a -d 1 -g 38.5".  Gain is
+often between 30-42 and you'll need to play with it to see what works
+best for your setup (see the software docs for scanning mode).
+
+If you have edited your MCR.JSON files with your permanent settings
+then in the future you can just run "mcr" with no args.
+
+
+Now, you may need to open a second command prompt, and then run
+ITCMON.  By default it is configured to receive every possible channel
+and both Full and Half rate modulation from the MCR processes.  Having
+all these channels enabled doesn't use any extra resources but you can
+eventually disable the ones you are not using if you want a cleaner
+display.  ITCMON uses the ITCMON.JSON file for its startup configuration.
+
+When you first start ITCMON it will be on the Servers tab.  Switch to
+the Monitoring tab and then hit "Start Monitoring".
+
+When you want to know more, continue reading the software-details.txt
+document.
+
+
