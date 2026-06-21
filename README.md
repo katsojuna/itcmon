@@ -29,3 +29,6 @@ Please use Groups.IO PTCTalk for discussion of the software and related topics.
 The software was built with Cygwin (see cygwin.com for more info).
 
 ![Screenshot](itcmon-screenshot.png)
+
+![Diagram](doc/itcmon-diagram.png)
+
