@@ -1,4 +1,15 @@
-# Interoperable Train Control Monitoring software v0.3
+# Interoperable Train Control Monitoring software v0.5
+
+Updates since v0.3:
+  - greatly improved performance and reception
+  - added "-d directory" flag it itcmon to have it read all json files from subdirectory
+  - added locomotives display to itcmon
+  - new packets.txt format has initial "I" for ITC to allow for future protocols
+  - mcr no longer has built-in rtl-sdr driver, it uses rtl_tcp program for reception
+  - mcr must be given device number (no longer accepts -1 to find device)
+  - mcr has new "-e #" flag to set ppm correction value
+  - mcr has new "-q #" flag to set squelch level
+  - new igw program for aggregating multiple servers
 
 Updates since v0.2:
   - added SDR ppm error correction value to mcr.json
