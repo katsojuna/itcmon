@@ -10,6 +10,7 @@ Updates since v0.3:
   - mcr has new "-e #" flag to set ppm correction value
   - mcr has new "-q #" flag to set squelch level
   - new igw program for aggregating multiple servers
+  - first release of raspberry pi code
 
 Updates since v0.2:
   - added SDR ppm error correction value to mcr.json
