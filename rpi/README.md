@@ -1,4 +1,4 @@
-This is the first release of Raspberry Pi software.
+This directory is for the Raspberry Pi.
 
 You should be able to use this to set up a remote receiver but will still need ITCMON on a PC, 
 or other software to display the data.
