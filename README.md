@@ -1,4 +1,4 @@
-# Interoperable Train Control Monitoring software v0.5
+# Interoperable Train Control Monitoring software v0.6
 
 Updates since v0.5:
   - Split the wius.json file up by railroad and next 3 digits of wiu#, so they are now stored in a subdirectory path such as "wius/802/802456.json".  You can run the program "split-wius" to read your old wius.json file and split it up into the right subfiles.   Keep a copy of your wius.json just in case something goes wrong.  However, before running ITCMON delete wius.json or rename it to something else.
