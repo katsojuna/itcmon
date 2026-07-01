@@ -1,5 +1,12 @@
 # Interoperable Train Control Monitoring software v0.5
 
+Updates since v0.5:
+  - Split the wius.json file up by railroad and next 3 digits of wiu#, so they are now stored in a subdirectory path such as "wius/802/802456.json".  You can run the program "split-wius" to read your old wius.json file and split it up into the right subfiles.   Keep a copy of your wius.json just in case something goes wrong.  However, before running ITCMON delete wius.json or rename it to something else.
+  - The auto-export command is replaced with "Save WIUs" which will add any newly discovered ones to your existing files.
+  - ITCMON will attempt to decode the signal and switch bits automatically when it discovers new WIUs (based on original idea of Robert Romaine)
+  - ITCMON now displays the local time instead of UTC
+  - Previous versions had a typo in the frequency for channel 102 and 142, this has been fixed!
+
 Updates since v0.3:
   - greatly improved performance and reception
   - added "-d directory" flag it itcmon to have it read all json files from subdirectory
