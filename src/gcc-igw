@@ -1,0 +1,1 @@
+gcc -O2 -o igw -s igw.c -L/usr/local/lib -lzmq -lcjson
