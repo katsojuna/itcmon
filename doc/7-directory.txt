@@ -1,0 +1,51 @@
+The ITC directory server is designed to allow clients anywhere to
+locate servers and WIU data files for particular railroads and
+regions.  This will become more important if this stuff takes off and
+we have lots of regional servers.  It assumes all regional servers
+will run on public IP addresses.
+
+The general idea is that a directory server would run on each
+regional, and at least one national server (hopefully at least 2).
+When an app wants to locate a server for a particular area it uses the
+WIU prefix as the search key.  This is the first 6 digits of the WIU
+(after the "7").  So for WIU 780212345678 the key is 802123.  The app
+would ask the local directory server where to get info for 802123, and
+it would either respond that it is serving that info, or it would get
+a referral "up the tree" to the next higher server (most likely just
+the national server).  The national server would then refer the app
+back down to another regional server that has the data.
+
+This is all implemented by the itcdir program (written in nodejs), and
+the interface is via a REST api.  itcdir reads the itcdir.json file on
+startup to find out what prefixes it serves.
+
+This is what you can ask the itcdir server:
+
+ GET  /api/find?wp=rrrnnn
+
+FIND will return the hostname and port of the zjpub servers for that
+prefix, or a referral to another server to ask.
+
+Once you found the correct server, you can ask the server for the
+WIU.JSON file data for decoding all the WIU info for that prefix,
+using:
+
+ GET  /api/get?wp=rrrnnn[&newer=yyyymmddhhmmss]
+
+The "newer" option is to only ask for the info if it is newer that the
+specified date and time.  You will get back a complete json file with
+all the data for that prefix.
+
+itcdir files can also notify their upstream servers about what
+prefixes they serve using:
+
+ POST /api/serving?wp=rrrnnn&server=hostname
+
+itcdir will log those to the file itcdir.updates for manual review,
+then the admin can add them to the local itcdir.json file.
+
+
+The program itcdir needs nodejs installed and is started with "node itcdir.js".
+
+A companion search program for testing is called wpfind.py and you can do a query
+by invoking it as "python wpfind.py 802123"

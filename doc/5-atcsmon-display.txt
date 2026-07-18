@@ -1,0 +1,122 @@
+To be able to have the PTC data be used to light up a dispatcher
+display, such as in ATCSMON or possibly Trainmon5, you want to read
+through all this!
+
+There is a program called "i2a" (ITC to ATCSMON) that will get WUI PTC
+indications from ITCMON, and translate those to the MCP#s and
+Indication bits used by ATCSMON.  To do this you will need to map
+WIU#s to MCP#s and also map PTC indications to MCP indications.
+
+To start this process, fire up ATCSMON, (download) and load up the
+territory you are going to monitor.  The first thing you will need to
+do is figure out which WIU maps to which control point.  If you are
+getting data for PTC WIU "780205123494" and you figure out it is Control Point
+named "Oak E" on the ATCS layout, then in your wius.json file give it that exact
+name like this:
+
+    "780205123403": {
+      "name": "Oak E",
+      "sig": "UP",
+      "ind": ...
+
+Match up as many as you can, though you can add new ones later on without a problem.
+
+If you want to start naming your indication switches and signals to
+match the layout, you can hover your mouse over the switch point on
+the layout and it will display something like "x:NW" or maybe
+"z:"1NW".  The "x" or "z" part is ignored, so the "NW" switch has no
+prefix and is just named "" for this WIU, or if it says "1NW" then
+name it "1".
+
+Now hover over each of the signals, you may see a switch sayin with 3
+signals showing "x:WG", "x:EG/NW" and "x:EG/RW" (or all of them with a
+prefix like "1").  Based on that and the prefix you can label your PTC
+signals "W", "EN" and "ER" (leaving out the G and switch 'W').
+
+But at some point, and sooner is better (after you give names to your
+WIUS), you want to run a program to automatically match up WIU and MCP
+names and add the MCP info to the wius.json file.
+
+----------
+The program will need a copy of the MCP file in text
+format. So look or extract the ATCSMON installation ZIP file for your
+region.  Inside you will find one of 2 files, either a "region.mcp" or
+"region.mdb" file.  If you have an MCP file you are in luck and it is
+text, looking like this:
+
+[MCPInformation]
+Count=61
+MCPAddress1=70224230030202
+MCPName1=Topock
+MCPMilepost1=561.25
+MCPControlMessageNo1=9.0.1
+...
+
+If it is an MDB file it is binary and you will need to convert it as follows:
+
+using CMD prompt: (powershell needs ".\" before program names):
+make sure to capitalize MCP
+
+   mdb-export region.mdb MCP | mdbconvert > region.mcp
+
+Then check the region.mcp file and make sure it looks like the example above.
+----------
+
+Now I'd suggest making a backup copy of your wius file before the next step:
+
+Then run the command:
+   addmcp2wiu region.mcp wius/rrr/rrrdddd.json
+
+This will read in your mcp file and your wius json file, try to match
+up the NAMES of both of them, and then insert the needed ATCS info
+into your wius.json file and write it back out.  If it found matches
+(like WIU "name":"Oak E" matching an MCP "MCPNameN=Oak E" entry then
+it will update your wiu entries too look like this:
+
+    "780201234103": {
+      "name": "Oak E",
+      "sig": "UP",
+      "ind": [
+        {"switch": ""},
+        {"signal": "WN"},
+        {"signal": "WR"},
+        {"signal": "E"}
+      ],
+      "atcs": {
+        "mcp": "8802976540019",
+        "proto": "s",
+        "ibitsn": 32,
+        "ibits": "WGK,EGK,,1EXK,WXK,2EXK,RWK,NWK,1AEAK,AWAK,2AEAK,,1EAK,WAK,2EAK,TK,,,,,,,,,,,,,,,,"
+      }
+    },
+
+The "atcs" section is what will be used by the "i2a" translator.
+"mcp" is the matching MCP#, proto is "s" for SCS-128, "#" for ATCS,
+"g" for Genysis or "a" for ARES.  ibitsn is the number of indication
+bits it expects, and ibits is the ordered list of bits and indication
+symbols.
+
+You can re-run "addmcp2wiu" anytime you are able to add a new "name"
+to the WIU entry and need to extract the ATCS info.
+
+-------------
+
+Finally, all is setup and you can run "i2a" (or better "i2a -D" for
+debugging output until you get everything working well).  i2a connects
+to the ITCMON ZMQ server so MCR and ITCMON need to be running as well.
+i2a uses a config file i2a.json where you can set a default tcp port#
+for ATCSMON and also specify the name of signal aspects that are
+considered "Stop" (anything not a go).
+
+i2a also takes some command line arguments to set which zjpub server to get
+the live data from.  It defaults to 127.0.0.1 and port 18001, but you can change it
+with "i2a -h host-or-ip -r port"
+
+Now, startup ATCSMON, load up your dispatcher display, go to
+Configure->Options->Data Source.  Select "Network Connection", Uncheck
+the obsolete ATCS server and click Add.  Add IP address 127.0.0.1 and
+port# 4801 (unless you changed it in i2a.json).  Get out of that and
+hit the "play" button to start ATCS monitoring.  You should see a
+connect message from i2a (if you used -D flag).  i2a will output WIU
+updates as it receives them and show attempted signal matches.
+That's it!
