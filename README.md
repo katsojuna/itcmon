@@ -1,4 +1,10 @@
-# Interoperable Train Control Monitoring software v0.6
+# Interoperable Train Control Monitoring software v0.7
+
+Updates since v0.6:
+  - mcr will pick lowest possible sampling rate depending on the range of channels/frequencies configured
+  - updates to i2a packets sent to atcsmon
+  - new itcdir program is a start on having a directory service to locate public servers for particular wiu's (see src directory)
+  - itcmon will stop interpreting and sending indications in a future release, so you will need to use the data field and interpret them yourself if developing an app (can use wiu json data files to do this)
 
 Updates since v0.5:
   - Split the wius.json file up by railroad and next 3 digits of wiu#, so they are now stored in a subdirectory path such as "wius/802/802456.json".  You can run the program "split-wius" to read your old wius.json file and split it up into the right subfiles.   Keep a copy of your wius.json just in case something goes wrong.  However, before running ITCMON delete wius.json or rename it to something else.
