@@ -1,0 +1,29 @@
+{
+  "hostname": "test",
+  "wp": {
+    "802041": {
+      "servers": [
+        { "host": "127.0.0.1", "zjpub": 4800 },
+        { "host": "foobar.com", "zjpub": 4801 }
+      ]
+    },
+    "802055": {
+      "servers": [
+        { "host": "127.0.0.1", "zjpub": 4802 },
+        { "host": "foobar.com", "zjpub": 4803 }
+      ]
+    },
+    "802872": {
+      "servers": [
+        { "host": "127.0.0.1", "zjpub": 4802 },
+        { "host": "foobar.com", "zjpub": 4803 }
+      ]
+    },
+    "*": {
+      "referrals": [
+        { "host": "dir1.example.com" },
+        { "host": "dir2.example.com" }
+      ]
+    }
+  }
+}
