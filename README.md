@@ -1,5 +1,7 @@
 # Interoperable Train Control Monitoring software v0.7
 
+Also see <https://github.com/katsojuna/itcwatch> for the ITC Watch program.
+
 Updates since v0.6:
   - mcr will pick lowest possible sampling rate depending on the range of channels/frequencies configured
   - updates to i2a packets sent to atcsmon
