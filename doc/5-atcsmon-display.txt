@@ -120,3 +120,16 @@ hit the "play" button to start ATCS monitoring.  You should see a
 connect message from i2a (if you used -D flag).  i2a will output WIU
 updates as it receives them and show attempted signal matches.
 That's it!
+
+
+=====================================================
+2026-08-04 UPDATE FOR CTC DATA
+
+If you are in an area where CTC data is sent over the ITC network you can use the i2a
+program in a different mode which sends CTC data to ATCSMON (and ignores all PTC data).
+To use it this way, you will still need to add the "atcs" section to the WIU json entries
+as mentioned above, however, the only fields needed are "mcp" and "proto".  Then start
+up the i2a program with the "-c" option:  "i2a -c".
+
+ITCMON will show CTC data in the CTC tab if you are receiving this data.  There are packets
+for Status (Indications) and Controls.

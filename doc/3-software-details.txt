@@ -21,7 +21,7 @@ Optional args:
 "-d #" to set the RTL device number, for example, "mcr -d 2" if your RTL is #2.
 "-g #" to set rfgain (a float).  Use 0 to set the RTL for AGC.
 "-e #" to set you ppm correction value (like "-e 2" or "-e -3")
-"-q #" to set squelch level. Default of 4.0 is low (very sensitive to low signals).  16 is mid, 32-64 high.
+"-q #" to set squelch level. Default of 5.0 is low (very sensitive to low signals).  16 is mid, 32-64 high.
 "-D" will display rf bursts received.
 
 MCR starts up a subprocess called S2P (Signal to Packets) to process
@@ -116,6 +116,9 @@ The messages will look like this (run the program for the latest output format):
    "WIUID":"7802077509103","data":"BDEF00","seq":124,"inew":true,
    "indicators":[{"switch":1,"ind":"R"},{"signal":1,"ind":15},{"signal":2,"ind":15},{"signal":3,"ind":15}]
   }
+
+*NOTE: the "inew" and "indicators" field will stop being sent in a future release.
+You will need to decode these by reading the wiu json files or some other way.
 
 If you write code to use this make sure to check the proto and type
 fields match the above constant strings, as new types will be output
