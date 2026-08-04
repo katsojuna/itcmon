@@ -137,6 +137,7 @@ int update_wiu_table(uint64_t wiu_id, uint8_t ttl, uint8_t mtime, uint8_t seq, c
             wiu_table[i].mtime = mtime;
             wiu_table[i].seq = seq;
             strncpy(wiu_table[i].data_bits_hex, hex_data, sizeof(wiu_table[i].data_bits_hex) - 1);
+	    wiu_table[i].data_bits_hex[sizeof(wiu_table[i].data_bits_hex) - 1] = '\0';
             return notdup;
         }
     }
@@ -146,6 +147,7 @@ int update_wiu_table(uint64_t wiu_id, uint8_t ttl, uint8_t mtime, uint8_t seq, c
         wiu_table[wiu_count].mtime = mtime;
         wiu_table[wiu_count].seq = seq;
         strncpy(wiu_table[wiu_count].data_bits_hex, hex_data, sizeof(wiu_table[wiu_count].data_bits_hex) - 1);
+	wiu_table[wiu_count].data_bits_hex[sizeof(wiu_table[wiu_count].data_bits_hex) - 1] = '\0';
         wiu_table[wiu_count].is_active = true;
         wiu_count++;
         return 1;
@@ -233,6 +235,7 @@ void decode_wiu_status(const uint8_t *payload, size_t payload_len, uint8_t app_t
     bitreader_init(&br, payload, payload_len);
     
     uint64_t wiu_id = bitreader_read_bits(&br, 40);
+    if ((wiu_id < 700000000000ULL) || (wiu_id >= 800000000000ULL)) return;  // invalid
     uint8_t ttl = (bitreader_read_bits(&br, 8) >> 7 & 0x01);
     uint8_t mtime = bitreader_read_bits(&br, 8) & 0x0f;
     uint8_t seq = bitreader_read_bits(&br, 8);
@@ -521,37 +524,22 @@ void decode_t70(const uint8_t *payload, size_t payload_len)
     if (payload_len < 9) return;
     uint32_t tid = bitreader_read_bits(&br, 24);
     uint32_t rid = bitreader_read_bits(&br, 24);
+    uint8_t flags1 = bitreader_read_bits(&br, 8);
     uint8_t seq = bitreader_read_bits(&br, 8);
-    uint32_t msgnum = bitreader_read_bits(&br, 16);
-    if (msgnum == 0x65)
-    {
-	    if (payload_len < 30) return;
-	    p = (char *) payload+28;
-	    q = name;
-	    for (int i = 0; i < 128; i++)
-	    {
-		    if (*p == 0) break;
-		    *q++ = *p++;
-	    }
-	    *q = 0;
-	    q[127] = 0;
-	    if (!extract_loco_name(name,loconame)) return;
-	    int index = new_loco(rid,tid,loconame);
-	    if (index >= 0) update_loco(index,rid,tid);
-    }
-    else if (msgnum != 0x24)
+    uint32_t msgnum = bitreader_read_bits(&br, 8);
+    if (msgnum != 0x21)
     {
 	    check_loco_seen(tid,rid);
 	    return;
     }
     if (payload_len < 23) return;
-    uint32_t radio_id = (payload[26] << 16) | (payload[27] << 8) |  payload[28];
-    int offset = 29;
+    uint32_t radio_id = (payload[17] << 16) | (payload[18] << 8) |  payload[19];
+    int offset = 20;
     if (offset >= payload_len) return;
     offset++;
     if (offset >= payload_len) return;
     int namelen = payload[offset++];
-    if (namelen > 127) return;
+    if (namelen > 126) return;
     if ((offset+namelen) >= payload_len) return;
     p = (char *) payload+offset;
     q = name;
@@ -559,7 +547,7 @@ void decode_t70(const uint8_t *payload, size_t payload_len)
     {
 	    *q++ = *p++;
     }
-    *q++ = 0;
+    *q = 0;
     if (!extract_loco_name(name,loconame)) return;
     int index = new_loco(radio_id,rid,loconame);
     if (index >= 0) update_loco(index,radio_id,rid);
@@ -639,6 +627,7 @@ void handle_router_inbound(void *router_socket) {
             // Keep overwriting msg_buffer. The very last frame in the stack is our payload!
             if (bytes_read > 0) {
                 strncpy(msg_buffer, frame_buffer, sizeof(msg_buffer) - 1);
+		msg_buffer[sizeof(msg_buffer) - 1] = '\0';
             }
         }
         
@@ -759,6 +748,7 @@ int load_config(const char *filename, char servers[MAX_SERVERS][256]) {
                 cJSON *s = cJSON_GetObjectItem(srv, "key"); // Updated to look for "key"
                 if (h && p && s) {
                     strncpy(outbound_dealers[outbound_dealers_count].host, h->valuestring, 127);
+		    outbound_dealers[outbound_dealers_count].host[127] = '\0';
                     outbound_dealers[outbound_dealers_count].port = p->valueint;
                     strncpy(outbound_dealers[outbound_dealers_count].secret, s->valuestring, 63);
                     outbound_dealers[outbound_dealers_count].socket = NULL;
