@@ -5,13 +5,13 @@ Also see <https://github.com/katsojuna/itcwatch> for the ITC Watch program.
 To upgrade, copy/unzip the new release, the copy your WIUS subdirectory into the new release folder.
 
 Updates since v0.7:
-  -mcr and s2p updated with improved signal processing code
-  -s2p now handles large unicast type x70 fragments and reassembles them
-  -itcmon has gui improvements in handling column widths and remembering changes
-  -itcmon now handles type x70 packets correctly
-  -itcmon adds a CTC tab to show CTC/ATCS/Codeline data, and outputs this in a new json zmjpub message
-  -i2a can be used to convert PTC to ATCSMON, *or* CTC to ATCSMON (using "i2a -c" option), but not both at the same time
-  -igw has some small updates, might fix a bug some people were seeing
+  - mcr and s2p updated with improved signal processing code
+  - s2p now handles large unicast type x70 fragments and reassembles them
+  - itcmon has gui improvements in handling column widths and remembering changes
+  - itcmon now handles type x70 packets correctly
+  - itcmon adds a CTC tab to show CTC/ATCS/Codeline data, and outputs this in a new json zmjpub message
+  - i2a can be used to convert PTC to ATCSMON, *or* CTC to ATCSMON (using "i2a -c" option), but not both at the same time
+  - igw has some small updates, might fix a bug some people were seeing
   
 Updates since v0.6:
   - mcr will pick lowest possible sampling rate depending on the range of channels/frequencies configured
