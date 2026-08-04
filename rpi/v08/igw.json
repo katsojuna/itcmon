@@ -1,0 +1,27 @@
+{
+  "servers": [
+      { "name":"PC 101 HR","host":"127.0.0.1","port":18101},
+      { "name":"PC 102 HR","host":"127.0.0.1","port":18102},
+      { "name":"PC 113 HR","host":"127.0.0.1","port":18113},
+      { "name":"PC 114 HR","host":"127.0.0.1","port":18114},
+      { "name":"PC 125 HR","host":"127.0.0.1","port":18125},
+      { "name":"PC 125 FR","host":"127.0.0.1","port":20125},
+      { "name":"PC 126 HR","host":"127.0.0.1","port":18126},
+      { "name":"PC 126 FR","host":"127.0.0.1","port":20126},
+      { "name":"PC 127 HR","host":"127.0.0.1","port":18127},
+      { "name":"PC 127 FR","host":"127.0.0.1","port":20127}
+  ],
+  "zjpub" : { "port" : 18001 },
+  "zjin": {
+      "port": 18003,
+      "credentials" :	[
+	  {"comment":"foo","key":"UploadKey1!"},
+	  {"comment":"bar","key":"UploadKey99!"}
+      ]
+  },
+  "zjout": {
+      "servers" : [
+	  { "host": "10.0.0.62", "port": 18003, "key": "UploadKey1!" }
+      ]
+  }
+}
