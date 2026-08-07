@@ -1,8 +1,14 @@
-# Interoperable Train Control Monitoring software v0.8
+# Interoperable Train Control Monitoring software v0.9
 
 Also see <https://github.com/katsojuna/itcwatch> for the ITC Watch program.
 
-To upgrade, copy/unzip the new release, the copy your WIUS subdirectory into the new release folder.
+To upgrade, copy/unzip the new release, the copy your WIUS subdirectory into the new release folder.  You may also need to copy over some of your config files such as mcr.json, itcmon.json, etc.
+
+Updates since v0.8:
+  - itcmon now supports milepost entries like "MP":"CP42" for each WIU and lets you sort on that column
+  - igw has many bug fixes, should fix hanging problem, rewrote how auth protocol works (if you were using this you need to update both ends of any igw connections)
+  - mcr will now look for channel# to frequencies in channels.json (if not there will revert to built-in table)
+  - i2a optional arg "-a" will convert matching and opposing signals that are both not stops to both being stops, possibly useful for ABS signals.  without this option it won't change anything.
 
 Updates since v0.7:
   - mcr and s2p updated with improved signal processing code
