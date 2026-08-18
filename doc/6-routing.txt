@@ -6,7 +6,9 @@ messages and ignores all other packet types.  All WIU data that is
 received is checked for duplicates and those are filtered out.
 
 IGW reads the igw.json config file on startup.
-There is one optional flag "-D" to display debug info.
+There is an optional flag "-D" to display debug info.
+There is aso a flag "-b" to have the process disconnect from the
+terminal and go into background mode (for server operation).
 
 IGW has 2 input stream types and 2 output stream types.
 Each type is optional.

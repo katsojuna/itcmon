@@ -108,6 +108,9 @@ i2a uses a config file i2a.json where you can set a default tcp port#
 for ATCSMON and also specify the name of signal aspects that are
 considered "Stop" (anything not a go).
 
+There is aso a flag "-b" to have the process disconnect from the
+terminal and go into background mode (for server operation).
+
 i2a also takes some command line arguments to set which zjpub server to get
 the live data from.  It defaults to 127.0.0.1 and port 18001, but you can change it
 with "i2a -h host-or-ip -r port"
@@ -119,8 +122,6 @@ port# 4801 (unless you changed it in i2a.json).  Get out of that and
 hit the "play" button to start ATCS monitoring.  You should see a
 connect message from i2a (if you used -D flag).  i2a will output WIU
 updates as it receives them and show attempted signal matches.
-That's it!
-
 
 =====================================================
 2026-08-04 UPDATE FOR CTC DATA
