@@ -1,8 +1,15 @@
-# Interoperable Train Control Monitoring software v0.9
+# Interoperable Train Control Monitoring software v1.0
 
 Also see <https://github.com/katsojuna/itcwatch> for the ITC Watch program.
 
-To upgrade, copy/unzip the new release, the copy your WIUS subdirectory into the new release folder.  You may also need to copy over some of your config files such as mcr.json, itcmon.json, etc.
+To upgrade, copy/unzip the new release, the copy your WIUS subdirectory into the new release folder.  You may also need to copy over some of your config files such as mcr.json, itcmon.json, etc.  With v1.0 you can now place your config files in the "local" subdirectory which will make future upgrades easier.
+
+Updates since v0.9:
+  - mcr,igw,i2a,itcmon now search for json config files in a subdirectory "local" before the connected directory.  this will make it easier to upgrade to new release by just copying your local and wius subdirectories to the new dist dir.
+  - itcmon, minor fixes, starts monitoring on startup
+  - igw, fixes some crashes and issues with poor connectivity
+  - igw and i2a now have a "-b" option to place them in the background for server operation
+  - i2a json can now have a zmq server source option like "server":{"host":"1.2.3.4","port":18001}
 
 Updates since v0.8:
   - itcmon now supports milepost entries like "MP":"CP42" for each WIU and lets you sort on that column
