@@ -1,3 +1,5 @@
+This is more advanced info for app and server developers:
+
 The ITC directory server is designed to allow clients anywhere to
 locate servers and WIU data files for particular railroads and
 regions.  This will become more important if this stuff takes off and
@@ -17,9 +19,14 @@ back down to another regional server that has the data.
 
 This is all implemented by the itcdir program (written in nodejs), and
 the interface is via a REST api.  itcdir reads the itcdir.json file on
-startup to find out what prefixes it serves.
+startup to find out what prefixes it serves.  The server runs on port 4014.
 
 This is what you can ask the itcdir server:
+
+ GET  /api/search?key=<search-string>
+
+This will return a list of matching areas from the names.json
+More doc needed here!
 
  GET  /api/find?wp=rrrnnn
 
