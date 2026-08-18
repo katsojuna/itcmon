@@ -11,6 +11,7 @@ const ANNOUNCE_MS = 24 * 60 * 60 * 1000; // 24 hours
 const ROOT = __dirname;
 const DIR_JSON = path.join(ROOT, 'itcdir.json');
 const UPDATES_FILE = path.join(ROOT, 'itcdir.updates');
+const NAMES_JSON = path.join(ROOT, 'names.json');
 const WIU_ROOT = path.join(ROOT, 'wius');
 
 /**
@@ -271,6 +272,53 @@ function handleFind(res, wpRaw) {
   });
 }
 
+/**
+ * True if area.name or any area.divs entry contains key (case-insensitive).
+ */
+function areaMatchesSearch(area, keyLower) {
+  if (!area || typeof area !== 'object') return false;
+  if (typeof area.name === 'string' && area.name.toLowerCase().includes(keyLower)) {
+    return true;
+  }
+  if (Array.isArray(area.divs)) {
+    for (const d of area.divs) {
+      if (typeof d === 'string' && d.toLowerCase().includes(keyLower)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * GET /api/search?key=<string>
+ * Filter names.json areas whose name or divs contain key (min 2 chars).
+ * 404 if names.json is missing.
+ */
+function handleSearch(res, keyRaw) {
+  if (!fs.existsSync(NAMES_JSON)) {
+    return sendJson(res, 404, { error: 'not found', detail: 'names.json not present' });
+  }
+
+  const key = keyRaw != null ? String(keyRaw).trim() : '';
+  if (key.length < 2) {
+    return sendJson(res, 400, {
+      error: "don't know",
+      detail: 'key must be at least 2 characters',
+    });
+  }
+
+  let data;
+  try {
+    data = JSON.parse(fs.readFileSync(NAMES_JSON, 'utf8'));
+  } catch {
+    return sendJson(res, 500, { error: 'invalid json file', detail: 'names.json' });
+  }
+
+  const areasIn = data && Array.isArray(data.areas) ? data.areas : [];
+  const keyLower = key.toLowerCase();
+  const areas = areasIn.filter((a) => areaMatchesSearch(a, keyLower));
+  return sendJson(res, 200, { areas });
+}
+
 function handleGet(res, wpRaw, newerRaw) {
   const wp = normalizeWp(wpRaw);
   if (!wp) {
@@ -525,6 +573,9 @@ const server = http.createServer((req, res) => {
   if (pathname === '/api/get') {
     return handleGet(res, url.searchParams.get('wp'), url.searchParams.get('newer'));
   }
+  if (pathname === '/api/search') {
+    return handleSearch(res, url.searchParams.get('key'));
+  }
   if (pathname === '/health' || pathname === '/') {
     return sendJson(res, 200, {
       ok: true,
@@ -560,6 +611,7 @@ server.listen(PORT, () => {
   console.log(`[itcdir] REST API listening on http://0.0.0.0:${PORT}`);
   console.log(`[itcdir]   GET  /api/find?wp=rrrnnn`);
   console.log(`[itcdir]   GET  /api/get?wp=rrrnnn[&newer=yyyymmddhhmmss]`);
+  console.log(`[itcdir]   GET  /api/search?key=<string>`);
   console.log(`[itcdir]   POST /api/serving?wp=rrrnnn&server=hostname`);
 
   // Startup announce, then every 24 hours

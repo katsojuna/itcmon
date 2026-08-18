@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <ctype.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <time.h>
 #include <errno.h>
 #include <zmq.h>
@@ -20,8 +21,21 @@
 #define AUTH_PROTOCOL_VERSION 1
 /* Min seconds between need_auth / re-handshake / reject spam */
 #define AUTH_RATE_LIMIT_SEC 15
-/* Proactive dealer re-auth so half-dead TCP links (NAT ~15m) recover without restart */
-#define DEALER_REAUTH_INTERVAL_SEC 600
+/*
+ * Proactive dealer re-auth. Server only replies on auth (ok/need_auth/reject);
+ * once authorized it is otherwise silent. Re-auth both keeps the server
+ * authorized after its restarts and is our app-level liveness probe.
+ */
+#define DEALER_REAUTH_INTERVAL_SEC 180
+/* After a handshake, if no peer frame arrives within this, force reconnect */
+#define DEALER_AUTH_REPLY_TIMEOUT_SEC 45
+/*
+ * While we are still successfully queuing data to ZMQ, if the peer has not
+ * spoken for this long, treat the link as half-open (zmq_send can succeed
+ * into a local queue with no real delivery). Must be > REAUTH interval so a
+ * healthy silent-but-authorized peer is probed by re-auth first.
+ */
+#define DEALER_PEER_SILENCE_SEC 360
 /* poll: sub + router + up to MAX_SERVERS dealers */
 #define MAX_POLL_ITEMS (2 + MAX_SERVERS)
 /* Finite poll so we can run periodic keep-alive / re-auth work */
@@ -49,13 +63,23 @@ typedef struct {
     int port;
     char secret[64];
     void *socket;
-    time_t last_handshake; /* last successful auth send (for periodic re-auth) */
+    time_t last_handshake; /* last auth send (for periodic re-auth) */
+    time_t last_peer_rx;   /* last frame received from peer (auth reply or other) */
+    time_t last_ok_send;   /* last successful zmq_send of data to peer */
+    time_t next_reconnect; /* do not recreate socket before this time */
     int send_fail_streak;  /* consecutive zmq_send failures */
+    int reconnect_backoff; /* seconds, grows on failed reconnect */
 } OutboundDealer;
 
 OutboundDealer outbound_dealers[MAX_SERVERS];
 int outbound_dealers_count = 0;
 void *zmq_pub;
+void *zmq_ctx = NULL; /* for recreating dealer sockets after link failure */
+
+void send_dealer_handshake(void *socket, const char *secret);
+static int open_outbound_dealer(int i);
+static void reconnect_outbound_dealer(int i);
+static void close_outbound_dealer(int i);
 
 char dealer_uuid[65] = {0};
 
@@ -200,8 +224,8 @@ static int rate_limit_allow(time_t *last, int interval_sec)
 }
 
 /*
- * TCP keepalive + ZMTP heartbeats so dead peers (idle NAT, dropped Wi‑Fi, etc.)
- * are detected instead of silently queuing forever until a restart.
+ * TCP keepalive only (no ZMTP heartbeats — those can trip libzmq 4.3.x asserts
+ * like stream_engine_base.cpp:_input_stopped when the link flaps).
  */
 static void configure_stream_socket(void *sock)
 {
@@ -215,15 +239,7 @@ static void configure_stream_socket(void *sock)
     zmq_setsockopt(sock, ZMQ_TCP_KEEPALIVE_INTVL, &v, sizeof(v));
     v = 5;
     zmq_setsockopt(sock, ZMQ_TCP_KEEPALIVE_CNT, &v, sizeof(v));
-#ifdef ZMQ_HEARTBEAT_IVL
-    v = 5000; /* ZMTP ping every 5s */
-    zmq_setsockopt(sock, ZMQ_HEARTBEAT_IVL, &v, sizeof(v));
-    v = 15000;
-    zmq_setsockopt(sock, ZMQ_HEARTBEAT_TIMEOUT, &v, sizeof(v));
-    v = 60000;
-    zmq_setsockopt(sock, ZMQ_HEARTBEAT_TTL, &v, sizeof(v));
-#endif
-    v = 1000;
+    v = 0; /* close quickly on recreate */
     zmq_setsockopt(sock, ZMQ_LINGER, &v, sizeof(v));
 }
 
@@ -232,18 +248,104 @@ static void configure_dealer_socket(void *sock)
     if (!sock) return;
     configure_stream_socket(sock);
     int v;
-    /* Don't queue messages to a peer that is not currently connected */
-    v = 1;
+    /* Allow ZMQ to reconnect and buffer a little (IMMEDIATE+dead link caused EAGAIN storms) */
+    v = 0;
     zmq_setsockopt(sock, ZMQ_IMMEDIATE, &v, sizeof(v));
     v = 1000;
     zmq_setsockopt(sock, ZMQ_RECONNECT_IVL, &v, sizeof(v));
-    v = 10000;
+    v = 30000;
     zmq_setsockopt(sock, ZMQ_RECONNECT_IVL_MAX, &v, sizeof(v));
-    /* Bound queue so a dead peer surfaces as send failures instead of infinite RAM */
-    v = 500;
+    v = 200; /* small HWM; drop oldest under backpressure rather than grow forever */
     zmq_setsockopt(sock, ZMQ_SNDHWM, &v, sizeof(v));
-    v = 3000; /* fail send after 3s rather than hang forever */
+    /* Non-blocking data path uses ZMQ_DONTWAIT; keep a short timeout for handshakes */
+    v = 1000;
     zmq_setsockopt(sock, ZMQ_SNDTIMEO, &v, sizeof(v));
+    v = 1000;
+    zmq_setsockopt(sock, ZMQ_RCVTIMEO, &v, sizeof(v));
+}
+
+/* Close dealer socket for index i (safe if already NULL). */
+static void close_outbound_dealer(int i)
+{
+    if (i < 0 || i >= outbound_dealers_count) return;
+    if (!outbound_dealers[i].socket) return;
+    int linger = 0;
+    zmq_setsockopt(outbound_dealers[i].socket, ZMQ_LINGER, &linger, sizeof(linger));
+    zmq_close(outbound_dealers[i].socket);
+    outbound_dealers[i].socket = NULL;
+}
+
+/*
+ * Create/connect dealer i and send auth. Returns 0 on success, -1 on failure.
+ * Call only when zmq_ctx is set.
+ */
+static int open_outbound_dealer(int i)
+{
+    if (i < 0 || i >= outbound_dealers_count || !zmq_ctx) return -1;
+    close_outbound_dealer(i);
+
+    void *dealer = zmq_socket(zmq_ctx, ZMQ_DEALER);
+    if (!dealer) {
+        printf("[Dealer] zmq_socket failed for %s:%d\n",
+               outbound_dealers[i].host, outbound_dealers[i].port);
+        return -1;
+    }
+    configure_dealer_socket(dealer);
+    if (zmq_setsockopt(dealer, ZMQ_IDENTITY, binary_id, binary_id_len) != 0) {
+        printf("[Dealer] set IDENTITY failed for %s:%d: %s\n",
+               outbound_dealers[i].host, outbound_dealers[i].port,
+               zmq_strerror(zmq_errno()));
+        zmq_close(dealer);
+        return -1;
+    }
+    char target_addr[256];
+    snprintf(target_addr, sizeof(target_addr), "tcp://%s:%d",
+             outbound_dealers[i].host, outbound_dealers[i].port);
+    if (zmq_connect(dealer, target_addr) != 0) {
+        printf("[Dealer] connect failed to %s: %s\n",
+               target_addr, zmq_strerror(zmq_errno()));
+        zmq_close(dealer);
+        return -1;
+    }
+    outbound_dealers[i].socket = dealer;
+    outbound_dealers[i].send_fail_streak = 0;
+    /* Fresh link: do not inherit peer-alive timestamps from the old socket */
+    outbound_dealers[i].last_peer_rx = 0;
+    outbound_dealers[i].last_ok_send = 0;
+    outbound_dealers[i].last_handshake = 0;
+    usleep(50000);
+    send_dealer_handshake(dealer, outbound_dealers[i].secret);
+    return 0;
+}
+
+/* Recreate dealer after link loss; exponential backoff 5s .. 60s. */
+static void reconnect_outbound_dealer(int i)
+{
+    if (i < 0 || i >= outbound_dealers_count) return;
+    time_t now = time(NULL);
+    if (outbound_dealers[i].next_reconnect > now)
+        return;
+
+    printf("[Dealer] Reconnecting to %s:%d ...\n",
+           outbound_dealers[i].host, outbound_dealers[i].port);
+
+    if (open_outbound_dealer(i) == 0) {
+        outbound_dealers[i].reconnect_backoff = 5;
+        outbound_dealers[i].next_reconnect = 0;
+        printf("[Dealer] Reconnected to %s:%d\n",
+               outbound_dealers[i].host, outbound_dealers[i].port);
+    } else {
+        if (outbound_dealers[i].reconnect_backoff < 5)
+            outbound_dealers[i].reconnect_backoff = 5;
+        else if (outbound_dealers[i].reconnect_backoff < 60)
+            outbound_dealers[i].reconnect_backoff *= 2;
+        if (outbound_dealers[i].reconnect_backoff > 60)
+            outbound_dealers[i].reconnect_backoff = 60;
+        outbound_dealers[i].next_reconnect = now + outbound_dealers[i].reconnect_backoff;
+        printf("[Dealer] Reconnect to %s:%d failed; retry in %ds\n",
+               outbound_dealers[i].host, outbound_dealers[i].port,
+               outbound_dealers[i].reconnect_backoff);
+    }
 }
 
 /* Cheap filter so unauth floods skip full JSON auth parse when clearly not auth. */
@@ -402,39 +504,52 @@ static int is_auth_reply_json(const char *msg)
 void publish_json(char *json_string)
 {
 	if (!json_string) return;
-	if (debug) printf("  send %s\n",json_string);
-	// Local publish
+	// Local publish (never abort process if this fails)
 	if (zmq_pub)
-		zmq_send(zmq_pub, json_string, strlen(json_string), 0);
+		(void)zmq_send(zmq_pub, json_string, strlen(json_string), ZMQ_DONTWAIT);
             
-	// Outbound stream sends PURE data. ZMQ adds the UUID identity automatically!
+	// Outbound DEALER — DONTWAIT so a down link cannot block or assert-path thrash
 	for (int i = 0; i < outbound_dealers_count; i++) {
-                if (!outbound_dealers[i].socket) continue;
+		if (!outbound_dealers[i].socket) {
+			/* Socket closed after link loss; try reconnect on backoff */
+			reconnect_outbound_dealer(i);
+			continue;
+		}
 		int rc = zmq_send(outbound_dealers[i].socket, json_string,
-		                  strlen(json_string), 0);
+		                  strlen(json_string), ZMQ_DONTWAIT);
 		if (rc < 0) {
+			int err = zmq_errno();
 			outbound_dealers[i].send_fail_streak++;
-			/* Rate-limit failure logs */
 			static time_t last_send_fail_log = 0;
 			if (rate_limit_allow(&last_send_fail_log, AUTH_RATE_LIMIT_SEC)) {
-				if (debug)
-				   printf("[Dealer] send failed to %s:%d (%s) streak=%d — "
-				       "peer may be down; will re-auth/reconnect\n",
+				printf("[Dealer] send failed to %s:%d (%s) streak=%d\n",
 				       outbound_dealers[i].host,
 				       outbound_dealers[i].port,
-				       zmq_strerror(zmq_errno()),
+				       zmq_strerror(err),
 				       outbound_dealers[i].send_fail_streak);
 			}
-			/* After several failures, force a handshake (wakes reconnect path) */
-			if (outbound_dealers[i].send_fail_streak >= 3) {
-				send_dealer_handshake(outbound_dealers[i].socket,
-				                      outbound_dealers[i].secret);
+			/*
+			 * Do NOT hammer handshake on a dying socket (that triggered
+			 * libzmq stream_engine asserts). After a few EAGAINs, close
+			 * and recreate the dealer with backoff.
+			 */
+			if (outbound_dealers[i].send_fail_streak >= 5) {
 				outbound_dealers[i].send_fail_streak = 0;
+				outbound_dealers[i].next_reconnect = 0; /* allow now */
+				reconnect_outbound_dealer(i);
 			}
 		} else {
 			outbound_dealers[i].send_fail_streak = 0;
+			outbound_dealers[i].reconnect_backoff = 5;
+			outbound_dealers[i].last_ok_send = time(NULL);
+			/* Only claim "send" when the dealer accepted the message */
+			if (debug)
+				printf("  send %s => %s:%d\n", json_string,
+				       outbound_dealers[i].host, outbound_dealers[i].port);
 		}
 	}
+	if (debug && outbound_dealers_count == 0)
+		printf("  send %s (local PUB only)\n", json_string);
 }
 
 void process_json_wiu_msg(cJSON *payload_obj) {
@@ -1073,21 +1188,67 @@ static void handle_dealer_inbound(void *dealer_socket, const char *secret)
         zmq_getsockopt(dealer_socket, ZMQ_RCVMORE, &more, &more_sz);
     } while (more);
 
+    /* Mark peer as alive for whichever dealer this socket is */
+    for (int i = 0; i < outbound_dealers_count; i++) {
+        if (outbound_dealers[i].socket == dealer_socket) {
+            outbound_dealers[i].last_peer_rx = time(NULL);
+            break;
+        }
+    }
+
     if (debug && reply_body[0])
         printf("[Dealer] Upstream message received: %s\n", reply_body);
 
     if (auth_reply_needs_reauth(reply_body) && secret) {
-        static time_t last_dealer_reauth = 0;
-        if (rate_limit_allow(&last_dealer_reauth, AUTH_RATE_LIMIT_SEC)) {
-		if (debug) printf("[Dealer] Server requests auth. Re-transmitting handshake...\n");
-            send_dealer_handshake(dealer_socket, secret);
+        /* Per-dealer rate limit so multi-upstream does not starve one peer */
+        int idx = -1;
+        for (int i = 0; i < outbound_dealers_count; i++) {
+            if (outbound_dealers[i].socket == dealer_socket) {
+                idx = i;
+                break;
+            }
+        }
+        static time_t last_dealer_reauth[MAX_SERVERS];
+        time_t *rl = (idx >= 0) ? &last_dealer_reauth[idx] : NULL;
+        time_t fallback = 0;
+        if (!rl) rl = &fallback;
+        if (rate_limit_allow(rl, AUTH_RATE_LIMIT_SEC)) {
+            printf("[Dealer] Server requests auth. Re-transmitting handshake...\n");
+            if (idx >= 0 && outbound_dealers[idx].send_fail_streak >= 2) {
+                outbound_dealers[idx].next_reconnect = 0;
+                reconnect_outbound_dealer(idx);
+            } else {
+                send_dealer_handshake(dealer_socket, secret);
+            }
         }
     }
 }
 
+/* Open local/<name> first, then cwd. Copies the path used into used (if set). */
+static FILE *fopen_config(const char *filename, char *used, size_t used_sz)
+{
+    char localpath[512];
+    snprintf(localpath, sizeof(localpath), "local/%s", filename);
+    FILE *f = fopen(localpath, "r");
+    if (f) {
+        if (used && used_sz) snprintf(used, used_sz, "%s", localpath);
+        return f;
+    }
+    f = fopen(filename, "r");
+    if (f && used && used_sz) snprintf(used, used_sz, "%s", filename);
+    else if (used && used_sz) used[0] = '\0';
+    return f;
+}
+
 int load_config(const char *filename, char servers[MAX_SERVERS][256]) {
-    FILE *f = fopen(filename, "r");
-    if (!f) { perror("Failed to open config file"); return 0; }
+    char cfgpath[512];
+    FILE *f = fopen_config(filename, cfgpath, sizeof(cfgpath));
+    if (!f) {
+        fprintf(stderr, "Failed to open config file %s (tried local/%s then %s)\n",
+                filename, filename, filename);
+        return 0;
+    }
+    printf("[Config] loaded %s\n", cfgpath);
     fseek(f, 0, SEEK_END); long size = ftell(f); fseek(f, 0, SEEK_SET);
     char *data = malloc(size + 1);
     if (!data) { fclose(f); return 0; }
@@ -1170,13 +1331,46 @@ int load_config(const char *filename, char servers[MAX_SERVERS][256]) {
     return count;
 }
 
+/*
+ * Daemonize before any ZMQ context/socket is created.
+ * libzmq uses background I/O threads; fork() after zmq_socket() leaves the
+ * child without those threads — process stays up but never really sends/recv.
+ */
+static void go_background(void)
+{
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("[igw] fork");
+        exit(1);
+    }
+    if (pid > 0)
+        exit(0); /* parent */
+
+    if (setsid() < 0) {
+        perror("[igw] setsid");
+        exit(1);
+    }
+
+    /* Drop TTY so SIGHUP/closed ssh does not kill the daemon mid-run */
+    int fd = open("/dev/null", O_RDWR);
+    if (fd >= 0) {
+        dup2(fd, STDIN_FILENO);
+        dup2(fd, STDOUT_FILENO);
+        dup2(fd, STDERR_FILENO);
+        if (fd > 2)
+            close(fd);
+    }
+}
+
 int main(int argc, char **argv) {
     int opt;
     char pubname[256];
     char servers[MAX_SERVERS][256];
-
-    while ((opt = getopt(argc, argv, "D")) != -1) {
+    int background = 0;
+    
+    while ((opt = getopt(argc, argv, "Db")) != -1) {
         switch (opt) {
+        case 'b': background = 1; break;
         case 'D': debug = 1; break;
         }
     }
@@ -1187,13 +1381,25 @@ int main(int argc, char **argv) {
 
     int server_count = load_config("igw.json", servers);
 
-    void *ctx = zmq_ctx_new();
+    /*
+     * -b: fork before ZMQ. -D skips background so debug stays on the console.
+     * Config is already loaded (cwd + relative igw.json still apply after fork).
+     */
+    if (background && !debug) {
+        printf("[igw] background (-b): daemonizing before ZMQ init (pid will change)\n");
+        fflush(stdout);
+        go_background();
+    }
+
+    zmq_ctx = zmq_ctx_new();
+    void *ctx = zmq_ctx;
     
     zmq_pub = zmq_socket(ctx, ZMQ_PUB);
     configure_stream_socket(zmq_pub);
     sprintf(pubname, "tcp://*:%d", zjport);
     zmq_bind(zmq_pub, pubname);
-    printf("Outbound ZMQ PUB json server active on %s\n", pubname);
+    if (!background || debug)
+        printf("Outbound ZMQ PUB json server active on %s\n", pubname);
 
     void *sub_socket = zmq_socket(ctx, ZMQ_SUB);
     configure_stream_socket(sub_socket);
@@ -1206,94 +1412,71 @@ int main(int argc, char **argv) {
     if (zjin_port > 0) {
         router_socket = zmq_socket(ctx, ZMQ_ROUTER);
         configure_stream_socket(router_socket);
-        /* Hand out identity routing errors rather than silent drops (if supported) */
-#ifdef ZMQ_ROUTER_MANDATORY
-        {
-            int mand = 1;
-            zmq_setsockopt(router_socket, ZMQ_ROUTER_MANDATORY, &mand, sizeof(mand));
-        }
-#endif
         char router_bind_path[256];
         sprintf(router_bind_path, "tcp://*:%d", zjin_port);
         zmq_bind(router_socket, router_bind_path);
-        printf("Inbound Router Listening on port %d\n", zjin_port);
+        if (!background || debug)
+            printf("Inbound Router Listening on port %d\n", zjin_port);
     }
 
     // Connect outbound dealer networks
     for (int i = 0; i < outbound_dealers_count; i++) {
-        void *dealer = zmq_socket(ctx, ZMQ_DEALER);
-        if (!dealer) { perror("Failed to create dealer socket"); continue; }
-
-        configure_dealer_socket(dealer);
-
-        // 1. CHOOSE IDENTITY FIRST (Must happen before connect!)
-        int rc = zmq_setsockopt(dealer, ZMQ_IDENTITY, binary_id, binary_id_len);
-        if (rc != 0) {
-            printf("[ERROR] Failed to set ZMQ_IDENTITY, error code: %d\n", zmq_errno());
-        }
-        
-        char target_addr[256];
-        sprintf(target_addr, "tcp://%s:%d", outbound_dealers[i].host, outbound_dealers[i].port);
-        printf("Connecting to peer gateway engine: %s\n", target_addr);
-        
-        // 2. NOW CONNECT THE SOCKET
-        if (zmq_connect(dealer, target_addr) == 0) {
-            outbound_dealers[i].socket = dealer;
-            outbound_dealers[i].send_fail_streak = 0;
-            outbound_dealers[i].last_handshake = 0;
-            
-            // Give background thread a tiny window to negotiate TCP
-            usleep(50000); 
-            
-            // 3. Versioned JSON auth request
-            send_dealer_handshake(dealer, outbound_dealers[i].secret);
-        } else {
-            printf("[ERROR] zmq_connect failed for %s\n", target_addr);
-            zmq_close(dealer);
-            outbound_dealers[i].socket = NULL;
+        outbound_dealers[i].reconnect_backoff = 5;
+        outbound_dealers[i].next_reconnect = 0;
+        if (!background || debug)
+            printf("Connecting to peer gateway engine: tcp://%s:%d\n",
+                   outbound_dealers[i].host, outbound_dealers[i].port);
+        if (open_outbound_dealer(i) != 0) {
+            outbound_dealers[i].next_reconnect = time(NULL) + 5;
         }
     }
-    
-    /*
-     * Poll layout: [0]=SUB, [1]=ROUTER (optional), [2..]=each outbound DEALER
-     */
+
     zmq_pollitem_t items[MAX_POLL_ITEMS];
-    memset(items, 0, sizeof(items));
-    int nitems = 0;
-    int idx_sub = -1, idx_router = -1, idx_dealer0 = -1;
-
-    idx_sub = nitems;
-    items[nitems].socket = sub_socket;
-    items[nitems].events = ZMQ_POLLIN;
-    nitems++;
-
-    if (router_socket) {
-        idx_router = nitems;
-        items[nitems].socket = router_socket;
-        items[nitems].events = ZMQ_POLLIN;
-        nitems++;
-    }
-
-    idx_dealer0 = nitems;
-    for (int i = 0; i < outbound_dealers_count && nitems < MAX_POLL_ITEMS; i++) {
-        if (!outbound_dealers[i].socket) continue;
-        items[nitems].socket = outbound_dealers[i].socket;
-        items[nitems].events = ZMQ_POLLIN;
-        nitems++;
-    }
-
     uint8_t buffer[8192];
     while (true) {
+        /*
+         * Rebuild poll set every iteration so recreated dealer sockets are watched.
+         * Layout: [0]=SUB, [1]=ROUTER (optional), [2..]=each live DEALER
+         */
+        memset(items, 0, sizeof(items));
+        int nitems = 0;
+        int idx_sub = -1, idx_router = -1, idx_dealer0 = -1;
+        int dealer_poll_index[MAX_SERVERS];
+        for (int i = 0; i < MAX_SERVERS; i++)
+            dealer_poll_index[i] = -1;
+
+        idx_sub = nitems;
+        items[nitems].socket = sub_socket;
+        items[nitems].events = ZMQ_POLLIN;
+        nitems++;
+
+        if (router_socket) {
+            idx_router = nitems;
+            items[nitems].socket = router_socket;
+            items[nitems].events = ZMQ_POLLIN;
+            nitems++;
+        }
+
+        idx_dealer0 = nitems;
+        for (int i = 0; i < outbound_dealers_count && nitems < MAX_POLL_ITEMS; i++) {
+            if (!outbound_dealers[i].socket) continue;
+            dealer_poll_index[i] = nitems;
+            items[nitems].socket = outbound_dealers[i].socket;
+            items[nitems].events = ZMQ_POLLIN;
+            nitems++;
+        }
+
         int rc = zmq_poll(items, nitems, POLL_INTERVAL_MS);
         if (rc < 0) {
             if (zmq_errno() == EINTR)
                 continue; /* signal interrupted poll — do not exit */
-            break;
+            printf("[IGW] zmq_poll error: %s\n", zmq_strerror(zmq_errno()));
+            continue; /* keep running through transient poll errors */
         }
 
         // Packet parsing from input stream feeds
         if (idx_sub >= 0 && (items[idx_sub].revents & ZMQ_POLLIN)) {
-            int bytes_recv = zmq_recv(sub_socket, buffer, sizeof(buffer), 0);
+            int bytes_recv = zmq_recv(sub_socket, buffer, sizeof(buffer), ZMQ_DONTWAIT);
             if (bytes_recv > 0) {
                 process_packet(buffer, bytes_recv);
             }
@@ -1305,36 +1488,71 @@ int main(int argc, char **argv) {
         }
 
         // Each outbound dealer (auth replies from upstream routers)
-        int di = 0;
-        for (int pi = idx_dealer0; pi < nitems; pi++) {
-            while (di < outbound_dealers_count && !outbound_dealers[di].socket)
-                di++;
-            if (di >= outbound_dealers_count)
-                break;
+        for (int i = 0; i < outbound_dealers_count; i++) {
+            int pi = dealer_poll_index[i];
+            if (pi < 0) continue;
             if (items[pi].revents & ZMQ_POLLIN) {
-                handle_dealer_inbound(outbound_dealers[di].socket,
-                                      outbound_dealers[di].secret);
+                handle_dealer_inbound(outbound_dealers[i].socket,
+                                      outbound_dealers[i].secret);
             }
-            di++;
         }
 
-        /*
-         * Periodic dealer re-auth (default 5 min). Keeps NAT mappings alive and
-         * re-establishes ROUTER authorization after silent reconnects — the
-         * classic "works ~15 minutes then needs igw restart" failure mode.
-         */
-        {
-            time_t now = time(NULL);
-            for (int i = 0; i < outbound_dealers_count; i++) {
-                if (!outbound_dealers[i].socket) continue;
-                if (outbound_dealers[i].last_handshake == 0 ||
-                    (now - outbound_dealers[i].last_handshake) >= DEALER_REAUTH_INTERVAL_SEC) {
-                    if (debug)
-                        printf("[Dealer] Periodic re-auth to %s:%d\n",
-                               outbound_dealers[i].host, outbound_dealers[i].port);
-                    send_dealer_handshake(outbound_dealers[i].socket,
-                                          outbound_dealers[i].secret);
+        time_t now = time(NULL);
+        for (int i = 0; i < outbound_dealers_count; i++) {
+            /* Missing socket: try reconnect on backoff */
+            if (!outbound_dealers[i].socket) {
+                reconnect_outbound_dealer(i);
+                continue;
+            }
+            /*
+             * Handshake without reply: server never answered (dead TCP, process
+             * restart mid-handshake, blackholed path). zmq_send of telemetry can
+             * still "succeed" into the local HWM — do not trust send alone.
+             */
+            if (outbound_dealers[i].last_handshake > 0 &&
+                (now - outbound_dealers[i].last_handshake) >= DEALER_AUTH_REPLY_TIMEOUT_SEC &&
+                (outbound_dealers[i].last_peer_rx == 0 ||
+                 outbound_dealers[i].last_peer_rx < outbound_dealers[i].last_handshake)) {
+                static time_t last_auth_timeout_log = 0;
+                if (rate_limit_allow(&last_auth_timeout_log, AUTH_RATE_LIMIT_SEC)) {
+                    printf("[Dealer] No auth reply from %s:%d for %lds after handshake — reconnecting\n",
+                           outbound_dealers[i].host, outbound_dealers[i].port,
+                           (long)(now - outbound_dealers[i].last_handshake));
                 }
+                outbound_dealers[i].next_reconnect = 0;
+                reconnect_outbound_dealer(i);
+                continue;
+            }
+            /*
+             * Peer silence while we keep queuing data: ZMQ accepted sends, but
+             * the remote stopped (auth lost with no need_auth delivered, NAT
+             * half-open, etc.). Force a full reconnect + re-auth.
+             */
+            if (outbound_dealers[i].last_ok_send > 0 &&
+                outbound_dealers[i].last_peer_rx > 0 &&
+                (now - outbound_dealers[i].last_ok_send) < 60 &&
+                (now - outbound_dealers[i].last_peer_rx) >= DEALER_PEER_SILENCE_SEC) {
+                static time_t last_silence_log = 0;
+                if (rate_limit_allow(&last_silence_log, AUTH_RATE_LIMIT_SEC)) {
+                    printf("[Dealer] No reply from %s:%d for %lds while sending — reconnecting\n",
+                           outbound_dealers[i].host, outbound_dealers[i].port,
+                           (long)(now - outbound_dealers[i].last_peer_rx));
+                }
+                outbound_dealers[i].next_reconnect = 0;
+                reconnect_outbound_dealer(i);
+                continue;
+            }
+            /*
+             * Periodic re-auth: keeps server authorized after its restart, and
+             * is the liveness probe (server only talks on auth replies).
+             */
+            if (outbound_dealers[i].last_handshake == 0 ||
+                (now - outbound_dealers[i].last_handshake) >= DEALER_REAUTH_INTERVAL_SEC) {
+                if (debug)
+                    printf("[Dealer] Periodic re-auth to %s:%d\n",
+                           outbound_dealers[i].host, outbound_dealers[i].port);
+                send_dealer_handshake(outbound_dealers[i].socket,
+                                      outbound_dealers[i].secret);
             }
         }
     }

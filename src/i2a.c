@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <time.h>
 #include <sys/types.h>
@@ -305,14 +306,33 @@ void free_rrdata(void) {
     }
 }
 
+/* Open local/<name> first, then cwd. Copies the path used into used (if set). */
+static FILE *fopen_config(const char *filename, char *used, size_t used_sz)
+{
+    char localpath[512];
+    snprintf(localpath, sizeof(localpath), "local/%s", filename);
+    FILE *f = fopen(localpath, "r");
+    if (f) {
+        if (used && used_sz) snprintf(used, used_sz, "%s", localpath);
+        return f;
+    }
+    f = fopen(filename, "r");
+    if (f && used && used_sz) snprintf(used, used_sz, "%s", filename);
+    else if (used && used_sz) used[0] = '\0';
+    return f;
+}
+
 /* Load signal aspect tables from rrdata.json */
 void load_rrdata(const char *filename) {
     free_rrdata();
-    FILE *f = fopen(filename, "r");
+    char cfgpath[512];
+    FILE *f = fopen_config(filename, cfgpath, sizeof(cfgpath));
     if (!f) {
-        printf("No %s found — signal aspects will show as [n]\n", filename);
+        printf("No %s found (local/%s or ./%s) — signal aspects will show as [n]\n",
+               filename, filename, filename);
         return;
     }
+    filename = cfgpath;
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
     fseek(f, 0, SEEK_SET);
@@ -399,11 +419,14 @@ time_t get_file_mtime(const char *filename) {
 }
 
 void load_i2a_config(const char *filename) {
-    FILE *f = fopen(filename, "r");
+    char cfgpath[512];
+    FILE *f = fopen_config(filename, cfgpath, sizeof(cfgpath));
     if (!f) {
-        printf("No %s found, using defaults\n", filename);
+        printf("No %s found (local/%s or ./%s), using defaults\n",
+               filename, filename, filename);
         return;
     }
+    filename = cfgpath;
     
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
@@ -424,6 +447,26 @@ void load_i2a_config(const char *filename) {
     if (port_obj && cJSON_IsNumber(port_obj)) {
         atcs_port = port_obj->valueint;
         printf("Config: ATCSMON port set to %d\n", atcs_port);
+    }
+
+    /*
+     * Optional ZMQ SUB source override (default 127.0.0.1:18001):
+     *   "server": { "host": "127.0.0.1", "port": 20101 }
+     * CLI -h / -r still override after this is loaded.
+     */
+    cJSON *server_obj = cJSON_GetObjectItem(root, "server");
+    if (server_obj && cJSON_IsObject(server_obj)) {
+        cJSON *host_obj = cJSON_GetObjectItem(server_obj, "host");
+        cJSON *sport_obj = cJSON_GetObjectItem(server_obj, "port");
+        if (host_obj && cJSON_IsString(host_obj) && host_obj->valuestring &&
+            host_obj->valuestring[0]) {
+            strncpy(zsub_host, host_obj->valuestring, sizeof(zsub_host) - 1);
+            zsub_host[sizeof(zsub_host) - 1] = '\0';
+        }
+        if (sport_obj && cJSON_IsNumber(sport_obj) && sport_obj->valueint > 0) {
+            zsub_port = sport_obj->valueint;
+        }
+        printf("Config: ZMQ SUB server set to %s:%d\n", zsub_host, zsub_port);
     }
 
     cJSON *stops_arr = cJSON_GetObjectItem(root, "stops");
@@ -1325,20 +1368,46 @@ void check_keepalives(void) {
 
 // ====================== Main ======================
 
+/* Must run before any ZMQ context/socket — libzmq I/O threads do not survive fork(). */
+static void go_background(void)
+{
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("[i2a] fork");
+        exit(1);
+    }
+    if (pid > 0)
+        exit(0);
+    if (setsid() < 0) {
+        perror("[i2a] setsid");
+        exit(1);
+    }
+    int fd = open("/dev/null", O_RDWR);
+    if (fd >= 0) {
+        dup2(fd, STDIN_FILENO);
+        dup2(fd, STDOUT_FILENO);
+        dup2(fd, STDERR_FILENO);
+        if (fd > 2)
+            close(fd);
+    }
+}
+
 int main(int argc, char **argv) {
     int opt;
     int wantctc = 0;
     int ctc = 0, ptc = 0;
-
+    int background = 0;
+    
     printf("BEGIN  V1.0\n");
     
     load_i2a_config("i2a.json");
     load_rrdata("rrdata.json");
 
-    while ((opt = getopt(argc, argv, "Dr:h:ca")) != -1) {
+    while ((opt = getopt(argc, argv, "Dr:h:cab")) != -1) {
         switch (opt) {
         case 'c': wantctc = 1;  break;
         case 'a': opposing_to_stop = 1; break;
+        case 'b': background = 1; break;
         case 'r': zsub_port = atoi(optarg);  break;
         case 'h':
             strncpy(zsub_host, optarg, sizeof(zsub_host) - 1);
@@ -1350,12 +1419,19 @@ int main(int argc, char **argv) {
     if (opposing_to_stop)
         printf("Opposing non-stop pair => force stop enabled (-a)\n");
 
+    if (background && !debug) {
+        printf("[i2a] background (-b): daemonizing before ZMQ init\n");
+        fflush(stdout);
+        go_background();
+    }
+
     void *ctx = zmq_ctx_new();
     void *sub = zmq_socket(ctx, ZMQ_SUB);
     char addr[320];
 
     snprintf(addr, sizeof(addr), "tcp://%s:%d", zsub_host, zsub_port);
-    printf("ZMQ SUB connecting to %s\n", addr);
+    if (!background || debug)
+        printf("ZMQ SUB connecting to %s\n", addr);
     zmq_connect(sub, addr);
     zmq_setsockopt(sub, ZMQ_SUBSCRIBE, "", 0);
 
