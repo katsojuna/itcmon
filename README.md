@@ -2,7 +2,7 @@
 
 Also see <https://github.com/katsojuna/itcwatch> for the ITC Watch program.
 
-To upgrade, copy/unzip the new release, the copy your WIUS subdirectory into the new release folder.  You may also need to copy over some of your config files such as mcr.json, itcmon.json, etc.  With v1.0 you can now place your config files in the "local" subdirectory which will make future upgrades easier.
+To upgrade, copy/unzip the new release, then copy your WIUS subdirectory into the new release folder.  You may also need to copy over some of your config files such as mcr.json, itcmon.json, etc.  With v1.0 you can now place your config files in the "local" subdirectory which will make future upgrades easier.
 
 Updates since v0.9:
   - mcr,igw,i2a,itcmon now search for json config files in a subdirectory "local" before the connected directory.  this will make it easier to upgrade to new release by just copying your local and wius subdirectories to the new dist dir.
