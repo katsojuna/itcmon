@@ -354,8 +354,20 @@ static int looks_like_auth_message(const char *msg)
     if (!msg || !msg[0]) return 0;
     while (*msg == ' ' || *msg == '\t' || *msg == '\n' || *msg == '\r')
         msg++;
-    if (*msg == '{')
-        return strstr(msg, "\"auth\"") != NULL;
+    if (*msg == '{') {
+        /* Object name "auth", any case. Do not match "auth_reply". */
+        const char *p;
+        for (p = msg; *p; p++) {
+            if (*p != '"') continue;
+            if ((p[1] == 'a' || p[1] == 'A') &&
+                (p[2] == 'u' || p[2] == 'U') &&
+                (p[3] == 't' || p[3] == 'T') &&
+                (p[4] == 'h' || p[4] == 'H') &&
+                p[5] == '"')
+                return 1;
+        }
+        return 0;
+    }
     /* Legacy plain key: short, no braces */
     size_t n = strlen(msg);
     return (n > 0 && n < 64 && strchr(msg, '{') == NULL);

@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -386,11 +387,11 @@ static void load_ind_from_json(struct wiu_map *m, cJSON *ind_arr) {
         if (!child || !child->string) continue;
 
         char type = 0;
-        if (strcmp(child->string, "switch") == 0) type = 'w';
-        else if (strcmp(child->string, "signal") == 0) type = 'g';
-        else if (strcmp(child->string, "hazard") == 0) type = 'h';
-        else if (strcmp(child->string, "bit") == 0) type = 'b';
-        else if (strcmp(child->string, "un") == 0) type = 'u';
+        if (strcasecmp(child->string, "switch") == 0) type = 'w';
+        else if (strcasecmp(child->string, "signal") == 0) type = 'g';
+        else if (strcasecmp(child->string, "hazard") == 0) type = 'h';
+        else if (strcasecmp(child->string, "bit") == 0) type = 'b';
+        else if (strcasecmp(child->string, "un") == 0) type = 'u';
         else continue;
 
         m->ind[m->ind_count].type = type;
