@@ -1,0 +1,32 @@
+{
+  "channels": [
+    { "channel": 101, "frequency": 220112500 },
+    { "channel": 102, "frequency": 220137500 },
+    { "channel": 107, "frequency": 220262500 },
+    { "channel": 108, "frequency": 220287500 },
+    { "channel": 113, "frequency": 220412500 },
+    { "channel": 114, "frequency": 220437500 },
+    { "channel": 125, "frequency": 220712500 },
+    { "channel": 126, "frequency": 220737500 },
+    { "channel": 127, "frequency": 220762500 },
+    { "channel": 128, "frequency": 220787500 },
+    { "channel": 131, "frequency": 220862500 },
+    { "channel": 132, "frequency": 220887500 },
+    { "channel": 134, "frequency": 220937500 },
+    { "channel": 141, "frequency": 221112500 },
+    { "channel": 142, "frequency": 221137500 },
+    { "channel": 147, "frequency": 221262500 },
+    { "channel": 148, "frequency": 221287500 },
+    { "channel": 153, "frequency": 221412500 },
+    { "channel": 154, "frequency": 221437500 },
+    { "channel": 165, "frequency": 221712500 },
+    { "channel": 166, "frequency": 221737500 },
+    { "channel": 167, "frequency": 221762500 },
+    { "channel": 168, "frequency": 221787500 },
+    { "channel": 171, "frequency": 221862500 },
+    { "channel": 172, "frequency": 221887500 },
+    { "channel": 174, "frequency": 221937500 },
+    { "channel": 176, "frequency": 221987500 }
+  ],
+    "comment":"freq = 217 587 500 + (channel# * 25 000)"
+}
