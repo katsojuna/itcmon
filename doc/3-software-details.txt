@@ -31,6 +31,15 @@ process using UDP packets to your loopback (127.0.0.1) interface.
 Each S2P process serves the decoded packet data on a TCP port for
 ITCMON.
 
+By default, MCR starts up the program "rtl_tcp" on your local system
+with the default port 1234.  rtl_tcp is what actually connects to your
+SDR hardware and streams the received signal to MCR for processing.
+If you want to run this on another system, you can include the following
+keys in the mcr.json file and change them to point to the other system:
+{"rtltcp_host":"127.0.0.1","rtltcp_port":1234}   If you include either of
+these keys, MCR won't start it up locally and will try to connect to the
+specified server instead.
+
 MCR is the program that uses the most resources (CPU and UDP packets),
 so you'll want to disable channels (or particular channel/data-rate
 combos) that you don't need once you figure out which are active.
@@ -52,7 +61,7 @@ these if they are incorrect.
 The Wayside Info files are stored in a subdirectory called
 WIUS/rrr/rrrddd.json.  rrr is the railroad id number and ddd is the
 "subdivision" number (really just a line or area).  The program will
-load these files as needed when it sees WIU packets.
+load these files as needed when it sees WIU packets. 
 
 The Servers tab is where you can edit which channels to monitor (if
 MCR is set to receive them).  However, it doesn't use any extra
@@ -113,9 +122,7 @@ All WIU messages will be sent, and "inew" will indicate if any
 indication states have changed since the last message or not.
 The messages will look like this (run the program for the latest output format):
   {"proto":"PTC","type":"WIU",
-   "WIUID":"7802077509103","data":"BDEF00","seq":124,"inew":true,
-   "indicators":[{"switch":1,"ind":"R"},{"signal":1,"ind":15},{"signal":2,"ind":15},{"signal":3,"ind":15}]
-  }
+   "WIUID":"7802077509103","data":"BDEF00","seq":124}
 
 *NOTE: the "inew" and "indicators" field will stop being sent in a future release.
 You will need to decode these by reading the wiu json files or some other way.
