@@ -1,9 +1,28 @@
-# Interoperable Train Control Monitoring software v1.0
+# Interoperable Train Control Monitoring software v1.1
 
 Also see <https://github.com/katsojuna/itcwatch> for the ITC Watch program.
 
-To upgrade, copy/unzip the new release, then copy your WIUS subdirectory into the new release folder.  You may also need to copy over some of your config files such as mcr.json, itcmon.json, etc.  With v1.0 you can now place your config files in the "local" subdirectory which will make future upgrades easier.
+To upgrade, copy/unzip the new release, then copy your WIUS subdirectory into the new release folder.  You may also need to copy over some of your config files such as mcr.json, itcmon.json, etc.  With v1.0 you can now place your config files in the "local" subdirectory which will make future upgrades easier.  If you already did this then you should just be able to copy your local dir to the new release directory.
 
+----------------------------------------------------------------------------
+This release runs on Windows (tested on Win 11) and
+needs an RTL-SDR, a 220mhz antenna, and the
+regular Windows Zadig RTL/USB drivers installed.
+
+Download the ZIP file, unzip it into a new directory, read the files
+in the docs directory (start with quick-start.txt)
+
+Please use Groups.IO PTCTalk for discussion of the software and related topics.
+
+The software was built with Cygwin.
+
+----------------------------------------------------------------------------
+Updates in v1.1:
+  - minor bug fixes to most programs
+  - mcr no longer uses AVX instructions so should work on older processors
+  - mcr can use rtl_tcp from a remote system with new mcr.json keys "rtltcp_host" and "rtltcp_port" (see docs)
+  - fixed some crashes of s2p program and have mcr restart them if it happens again
+    
 Updates since v0.9:
   - mcr,igw,i2a,itcmon now search for json config files in a subdirectory "local" before the connected directory.  this will make it easier to upgrade to new release by just copying your local and wius subdirectories to the new dist dir.
   - itcmon, minor fixes, starts monitoring on startup
@@ -56,17 +75,6 @@ Updates since v0.2:
   - improved deinterleave and fec code in s2p for better reception
   - added i2a program that translates PTC messages to ATCSMON server messages
   
-----------------------------------------------------------------------------
-This release runs on Windows (tested on Win 11) and
-needs an RTL-SDR, a 220mhz antenna, and the
-regular Windows Zadig RTL/USB drivers installed.
-
-Download the ZIP file, unzip it into a new directory, read the files
-in the docs directory (start with quick-start.txt)
-
-Please use Groups.IO PTCTalk for discussion of the software and related topics.
-
-The software was built with Cygwin (see cygwin.com for more info).
 
 ![Screenshot](itcmon-screenshot.png)
 
